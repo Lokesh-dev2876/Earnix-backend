@@ -1,0 +1,87 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql" // or mysql (use what you're using)
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          Int       @id @default(autoincrement())
+  name        String?
+  email       String    @unique
+  role        Role      @default(USER)
+  deviceId    String?
+  isBanned    Boolean   @default(false)
+
+  otpHash     String?
+  otpExpiry   DateTime?
+  otpAttempts Int       @default(0)
+  otpLockedUntil DateTime?
+
+  pin         String?
+
+  wallet      Wallet?
+  withdrawals Withdrawal[]
+  transactions Transaction[]
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt @default(now())
+}
+
+model Wallet {
+  id       Int    @id @default(autoincrement())
+  userId   Int    @unique
+  balance  Float  @default(0)
+
+  user     User   @relation(fields: [userId], references: [id])
+}
+
+model Withdrawal {
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  amount    Float
+  method    WithdrawalMethod
+  status    WithdrawalStatus @default(PENDING)
+
+  user      User      @relation(fields: [userId], references: [id])
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Transaction {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  amount      Float
+  type        TransactionType
+  status      String
+  description String?
+
+  user        User     @relation(fields: [userId], references: [id])
+
+  createdAt   DateTime @default(now())
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum WithdrawalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum WithdrawalMethod {
+  UPI
+  BANK
+}
+
+enum TransactionType {
+  CREDIT
+  DEBIT
+  WITHDRAWAL
+}
