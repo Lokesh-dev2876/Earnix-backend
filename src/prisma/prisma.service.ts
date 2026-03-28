@@ -7,5 +7,6 @@ export class PrismaService
     implements OnModuleInit {
     async onModuleInit() {
         await this.$connect();
+        console.log("DB Connected Successfully");
     }
 }

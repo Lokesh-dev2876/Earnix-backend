@@ -2,6 +2,7 @@ import {
     Injectable,
     UnauthorizedException,
     BadRequestException,
+    InternalServerErrorException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
@@ -20,50 +21,58 @@ export class AuthService {
 
     // 🔥 STEP 1: Send OTP
     async sendOtp(loginDto: LoginDto) {
-        const { email, deviceId } = loginDto;
+        try {
+            const { email, deviceId } = loginDto;
 
-        let user = await this.prisma.user.findUnique({
-            where: { email },
-        });
+            let user = await this.prisma.user.findUnique({
+                where: { email },
+            });
 
-        // Auto create user if not exists
-        if (!user) {
-            user = await this.prisma.user.create({
+            // Auto create user if not exists
+            if (!user) {
+                user = await this.prisma.user.create({
+                    data: {
+                        email,
+                        deviceId,
+                    },
+                });
+            }
+
+            if (user.isBanned) {
+                throw new UnauthorizedException('Account banned');
+            }
+
+            if (user.pin) {
+                return { hasPin: true, message: 'User has PIN' };
+            }
+
+            // Generate 4 digit OTP
+            const otp = Math.floor(1000 + Math.random() * 9000).toString();
+
+            const hashedOtp = await bcrypt.hash(otp, 10);
+
+            // ✅ Save OTP in DB (FIXED)
+            await this.prisma.user.update({
+                where: { email },
                 data: {
-                    email,
-                    deviceId,
+                    otpHash: hashedOtp,
+                    otpExpiry: new Date(Date.now() + 5 * 60 * 1000), // 5 minutes
                 },
             });
-        }
-
-        if (user.isBanned) {
-            throw new UnauthorizedException('Account banned');
-        }
-
-        if (user.pin) {
-            return { hasPin: true, message: 'User has PIN' };
-        }
-
-        // Generate 4 digit OTP
-        const otp = Math.floor(1000 + Math.random() * 9000).toString();
-
-        const hashedOtp = await bcrypt.hash(otp, 10);
-
-        // ✅ Save OTP in DB (FIXED)
-        await this.prisma.user.update({
-            where: { email },
-            data: {
-                otpHash: hashedOtp,
-                otpExpiry: new Date(Date.now() + 5 * 60 * 1000), // 5 minutes
-            },
-        });
 
             // ✅ Send Email
-        await this.mailService.sendOtp(email, otp);
+            await this.mailService.sendOtp(email, otp);
 
-        console.log('🔥 OTP:', otp); // For testing only
+            console.log('🔥 OTP:', otp); // For testing only
 
-        return { message: 'OTP sent successfully', hasPin: false };
+            return { message: 'OTP sent successfully', hasPin: false };
+        } catch (error) {
+            console.error("OTP ERROR:", error.message);
+            if (error instanceof UnauthorizedException || error instanceof BadRequestException) {
+                throw error;
+            }
+            throw new InternalServerErrorException(error.message || 'Error sending OTP');
+        }
     }
 
     // 🔥 STEP 1b: Forgot PIN (Force OTP)
